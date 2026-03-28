@@ -1,44 +1,76 @@
 """
-Minimal CLI entrypoint.
+Minimal CLI entrypoint with basic command dispatch.
 
-We keep the CLI intentionally thin.
-At this stage it only prints guidance for available v1 commands.
-
-Later, this module can dispatch to:
-- init-db
-- validate-release
-- publish-release
-- api
+Important design rule:
+- CLI stays thin
+- jobs do the real work
+- SQL remains the source of truth for schema and projections
 """
 
 from __future__ import annotations
 
+import logging
 import sys
 from textwrap import dedent
+
+from stock_quant_data.config.logging import configure_logging
+from stock_quant_data.jobs.init_db import run_init_db
+from stock_quant_data.jobs.publish_release import run_publish_release
+
+
+def _print_help() -> None:
+    """
+    Print CLI help text.
+
+    The list remains intentionally short to avoid a script explosion.
+    """
+    print(
+        dedent(
+            """
+            stock-quant-data-platform CLI
+
+            Commands:
+              sq init-db
+              sq publish-release
+              sq help
+            """
+        ).strip()
+    )
 
 
 def main() -> None:
     """
-    Minimal command line entrypoint.
+    Minimal command dispatcher.
 
-    We keep this tiny for the initial scaffold.
+    Supported v1 commands:
+    - init-db
+    - publish-release
     """
-    message = dedent(
-        """
-        stock-quant-data-platform CLI
+    configure_logging(level=logging.INFO)
 
-        Initial scaffold ready.
+    if len(sys.argv) <= 1:
+        _print_help()
+        raise SystemExit(0)
 
-        Planned commands:
-          sq init-db
-          sq validate-release
-          sq publish-release
-          sq api
-        """
-    ).strip()
+    command = sys.argv[1].strip().lower()
 
-    print(message)
-    sys.exit(0)
+    if command == "help":
+        _print_help()
+        raise SystemExit(0)
+
+    if command == "init-db":
+        run_init_db()
+        print("DONE: init-db")
+        raise SystemExit(0)
+
+    if command == "publish-release":
+        release_dir = run_publish_release()
+        print(f"DONE: publish-release -> {release_dir}")
+        raise SystemExit(0)
+
+    print(f"ERROR: unknown command '{command}'")
+    _print_help()
+    raise SystemExit(1)
 
 
 if __name__ == "__main__":
