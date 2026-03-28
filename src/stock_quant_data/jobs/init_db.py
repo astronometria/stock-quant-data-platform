@@ -1,8 +1,8 @@
 """
 Database initialization job.
 
-This job creates the minimum schemas, tables, and views needed for the
-scientific foundation of the platform.
+This job creates the minimum schemas, tables, views, and seed data needed
+for the scientific foundation of the platform.
 
 Design notes:
 - idempotent for iterative development
@@ -23,8 +23,6 @@ LOGGER = logging.getLogger(__name__)
 def _read_sql_file(path: Path) -> str:
     """
     Read a SQL file as UTF-8 text.
-
-    This helper stays tiny and explicit to keep SQL loading transparent.
     """
     return path.read_text(encoding="utf-8")
 
@@ -36,22 +34,26 @@ def run_init_db() -> None:
     Steps:
     1. open the mutable build DB
     2. execute DDL
-    3. execute serving views
+    3. execute API views
     4. seed a small default universe definition set
+    5. seed a small deterministic symbol-domain sample
     """
     project_root = Path(__file__).resolve().parents[3]
-    ddl_path = project_root / "sql" / "ddl" / "001_core_foundation.sql"
-    views_path = project_root / "sql" / "views" / "001_serving_universes.sql"
+
+    ddl_foundation_path = project_root / "sql" / "ddl" / "001_core_foundation.sql"
+    ddl_symbols_seed_path = project_root / "sql" / "ddl" / "002_symbols_seed.sql"
+    views_universes_path = project_root / "sql" / "views" / "001_serving_universes.sql"
+    views_symbols_path = project_root / "sql" / "views" / "002_api_symbols.sql"
 
     LOGGER.info("Opening build database")
     connection = connect_build_db()
 
     try:
-        LOGGER.info("Executing DDL file: %s", ddl_path)
-        connection.execute(_read_sql_file(ddl_path))
+        LOGGER.info("Executing DDL file: %s", ddl_foundation_path)
+        connection.execute(_read_sql_file(ddl_foundation_path))
 
-        LOGGER.info("Executing serving views file: %s", views_path)
-        connection.execute(_read_sql_file(views_path))
+        LOGGER.info("Executing API views file: %s", views_universes_path)
+        connection.execute(_read_sql_file(views_universes_path))
 
         LOGGER.info("Seeding default universe definitions")
         connection.execute(
@@ -91,6 +93,12 @@ def run_init_db() -> None:
             )
             """
         )
+
+        LOGGER.info("Executing symbol seed file: %s", ddl_symbols_seed_path)
+        connection.execute(_read_sql_file(ddl_symbols_seed_path))
+
+        LOGGER.info("Executing symbol API views file: %s", views_symbols_path)
+        connection.execute(_read_sql_file(views_symbols_path))
 
         LOGGER.info("Database initialization completed successfully")
     finally:

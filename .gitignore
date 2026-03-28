@@ -8,6 +8,20 @@ __pycache__/
 *.so
 
 # -------------------------------------------------------------------
+# Local developer backups
+# -------------------------------------------------------------------
+*.bak
+*.bak1
+*.bak2
+*.bak3
+*.bak4
+*.bak5
+*.bak6
+*.bak7
+*.bak8
+*.bak9
+
+# -------------------------------------------------------------------
 # Virtual environments
 # -------------------------------------------------------------------
 .venv/
@@ -22,9 +36,6 @@ env/
 
 # -------------------------------------------------------------------
 # Local databases and generated runtime artifacts
-# Important:
-# - We keep the directory structure in git, but not the generated DB files.
-# - The serving release artifacts are publish outputs, not source code.
 # -------------------------------------------------------------------
 *.duckdb
 *.duckdb.wal
