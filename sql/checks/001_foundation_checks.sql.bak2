@@ -13,6 +13,11 @@
 -- - Publication passes only if all failed_rows = 0
 -- ===================================================================
 
+-- -------------------------------------------------------------------
+-- Check 1:
+-- effective_to must not be earlier than effective_from
+-- for symbol_reference_history
+-- -------------------------------------------------------------------
 SELECT
     'symbol_reference_history_invalid_window' AS check_name,
     COUNT(*) AS failed_rows
@@ -22,6 +27,11 @@ WHERE effective_to IS NOT NULL
 
 UNION ALL
 
+-- -------------------------------------------------------------------
+-- Check 2:
+-- effective_to must not be earlier than effective_from
+-- for listing_status_history
+-- -------------------------------------------------------------------
 SELECT
     'listing_status_history_invalid_window' AS check_name,
     COUNT(*) AS failed_rows
@@ -31,6 +41,11 @@ WHERE effective_to IS NOT NULL
 
 UNION ALL
 
+-- -------------------------------------------------------------------
+-- Check 3:
+-- effective_to must not be earlier than effective_from
+-- for universe_membership_history
+-- -------------------------------------------------------------------
 SELECT
     'universe_membership_history_invalid_window' AS check_name,
     COUNT(*) AS failed_rows
@@ -40,6 +55,11 @@ WHERE effective_to IS NOT NULL
 
 UNION ALL
 
+-- -------------------------------------------------------------------
+-- Check 4:
+-- overlapping symbol reference windows are forbidden for the same
+-- instrument_id + symbol combination
+-- -------------------------------------------------------------------
 SELECT
     'symbol_reference_history_overlapping_windows' AS check_name,
     COUNT(*) AS failed_rows
@@ -54,10 +74,15 @@ FROM (
      AND a.symbol_reference_history_id < b.symbol_reference_history_id
      AND a.effective_from < COALESCE(b.effective_to, DATE '2999-12-31')
      AND b.effective_from < COALESCE(a.effective_to, DATE '2999-12-31')
-) AS overlap_rows_1
+) overlaps
 
 UNION ALL
 
+-- -------------------------------------------------------------------
+-- Check 5:
+-- overlapping listing status windows are forbidden for the same
+-- instrument_id + symbol combination
+-- -------------------------------------------------------------------
 SELECT
     'listing_status_history_overlapping_windows' AS check_name,
     COUNT(*) AS failed_rows
@@ -72,10 +97,15 @@ FROM (
      AND a.listing_status_history_id < b.listing_status_history_id
      AND a.effective_from < COALESCE(b.effective_to, DATE '2999-12-31')
      AND b.effective_from < COALESCE(a.effective_to, DATE '2999-12-31')
-) AS overlap_rows_2
+) overlaps
 
 UNION ALL
 
+-- -------------------------------------------------------------------
+-- Check 6:
+-- overlapping universe membership windows are forbidden for the same
+-- universe_id + instrument_id combination
+-- -------------------------------------------------------------------
 SELECT
     'universe_membership_history_overlapping_windows' AS check_name,
     COUNT(*) AS failed_rows
@@ -90,5 +120,5 @@ FROM (
      AND a.universe_membership_history_id < b.universe_membership_history_id
      AND a.effective_from < COALESCE(b.effective_to, DATE '2999-12-31')
      AND b.effective_from < COALESCE(a.effective_to, DATE '2999-12-31')
-) AS overlap_rows_3
+) overlaps
 ;

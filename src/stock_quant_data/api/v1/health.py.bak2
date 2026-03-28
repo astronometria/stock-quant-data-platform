@@ -41,7 +41,6 @@ def ready() -> dict:
         "status": "ready" if db_exists else "not_ready",
         "project_root": str(settings.project_root),
         "current_release_link": str(settings.current_release_link),
-        "current_release_target": str(settings.current_release_target) if settings.current_release_target else None,
         "current_release_db_path": str(settings.current_release_db_path),
         "current_release_db_exists": db_exists,
     }
@@ -51,13 +50,14 @@ def ready() -> dict:
 def release_info() -> dict:
     """
     Return basic information about the currently active release pointer.
+
+    In later versions, this endpoint can also read and expose manifest.json.
     """
     settings = get_settings()
 
     return {
         "project_root": str(settings.project_root),
         "current_release_link": str(settings.current_release_link),
-        "current_release_target": str(settings.current_release_target) if settings.current_release_target else None,
         "current_release_db_path": str(settings.current_release_db_path),
         "current_release_db_exists": settings.current_release_db_path.exists(),
     }

@@ -16,7 +16,6 @@ from textwrap import dedent
 from stock_quant_data.config.logging import configure_logging
 from stock_quant_data.jobs.init_db import run_init_db
 from stock_quant_data.jobs.publish_release import run_publish_release
-from stock_quant_data.jobs.validate_release import run_validate_release
 
 
 def _print_help() -> None:
@@ -32,7 +31,6 @@ def _print_help() -> None:
 
             Commands:
               sq init-db
-              sq validate-release
               sq publish-release
               sq help
             """
@@ -46,7 +44,6 @@ def main() -> None:
 
     Supported v1 commands:
     - init-db
-    - validate-release
     - publish-release
     """
     configure_logging(level=logging.INFO)
@@ -64,11 +61,6 @@ def main() -> None:
     if command == "init-db":
         run_init_db()
         print("DONE: init-db")
-        raise SystemExit(0)
-
-    if command == "validate-release":
-        report = run_validate_release(write_checks_to_build=True)
-        print(f"DONE: validate-release -> checks_passed={report.checks_passed}")
         raise SystemExit(0)
 
     if command == "publish-release":

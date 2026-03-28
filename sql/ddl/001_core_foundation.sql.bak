@@ -12,17 +12,10 @@
 -- - survivor-bias aware
 -- - explicit time windows
 -- - explicit provenance fields
---
--- Important naming rule:
--- - We intentionally use schema name "api" instead of "serving".
--- - The published database file is named "serving.duckdb".
--- - Using schema name "serving" inside serving.duckdb creates an
---   ambiguity in DuckDB because "serving" can refer both to the
---   catalog and to the schema.
 -- ===================================================================
 
 CREATE SCHEMA IF NOT EXISTS core;
-CREATE SCHEMA IF NOT EXISTS api;
+CREATE SCHEMA IF NOT EXISTS serving;
 CREATE SCHEMA IF NOT EXISTS meta;
 
 -- -------------------------------------------------------------------
@@ -131,6 +124,10 @@ CREATE TABLE IF NOT EXISTS meta.release_registry (
 
 -- -------------------------------------------------------------------
 -- Helpful indexes.
+--
+-- DuckDB does not use indexes the same way as OLTP databases, but explicit
+-- indexes can still be beneficial in some query patterns and also serve
+-- as a form of schema documentation for intended access paths.
 -- -------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_symbol_reference_history_symbol
 ON core.symbol_reference_history(symbol);
