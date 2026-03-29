@@ -30,20 +30,19 @@ def _read_sql_file(path: Path) -> str:
 def run_init_db() -> None:
     """
     Initialize the build database with the core scientific foundation schema.
-
-    Steps:
-    1. open the mutable build DB
-    2. execute DDL
-    3. execute API views
-    4. seed a small default universe definition set
-    5. seed a small deterministic symbol-domain sample
     """
     project_root = Path(__file__).resolve().parents[3]
 
     ddl_foundation_path = project_root / "sql" / "ddl" / "001_core_foundation.sql"
     ddl_symbols_seed_path = project_root / "sql" / "ddl" / "002_symbols_seed.sql"
+    ddl_prices_foundation_path = project_root / "sql" / "ddl" / "003_prices_foundation.sql"
+    ddl_prices_seed_path = project_root / "sql" / "ddl" / "004_prices_seed.sql"
+
     views_universes_path = project_root / "sql" / "views" / "001_serving_universes.sql"
     views_symbols_path = project_root / "sql" / "views" / "002_api_symbols.sql"
+    views_universe_snapshots_path = project_root / "sql" / "views" / "003_api_universe_snapshots.sql"
+    views_listing_status_path = project_root / "sql" / "views" / "004_api_listing_status.sql"
+    views_prices_path = project_root / "sql" / "views" / "005_api_prices.sql"
 
     LOGGER.info("Opening build database")
     connection = connect_build_db()
@@ -51,6 +50,9 @@ def run_init_db() -> None:
     try:
         LOGGER.info("Executing DDL file: %s", ddl_foundation_path)
         connection.execute(_read_sql_file(ddl_foundation_path))
+
+        LOGGER.info("Executing DDL file: %s", ddl_prices_foundation_path)
+        connection.execute(_read_sql_file(ddl_prices_foundation_path))
 
         LOGGER.info("Executing API views file: %s", views_universes_path)
         connection.execute(_read_sql_file(views_universes_path))
@@ -97,8 +99,20 @@ def run_init_db() -> None:
         LOGGER.info("Executing symbol seed file: %s", ddl_symbols_seed_path)
         connection.execute(_read_sql_file(ddl_symbols_seed_path))
 
+        LOGGER.info("Executing price seed file: %s", ddl_prices_seed_path)
+        connection.execute(_read_sql_file(ddl_prices_seed_path))
+
         LOGGER.info("Executing symbol API views file: %s", views_symbols_path)
         connection.execute(_read_sql_file(views_symbols_path))
+
+        LOGGER.info("Executing universe snapshot API views file: %s", views_universe_snapshots_path)
+        connection.execute(_read_sql_file(views_universe_snapshots_path))
+
+        LOGGER.info("Executing listing status API views file: %s", views_listing_status_path)
+        connection.execute(_read_sql_file(views_listing_status_path))
+
+        LOGGER.info("Executing prices API views file: %s", views_prices_path)
+        connection.execute(_read_sql_file(views_prices_path))
 
         LOGGER.info("Database initialization completed successfully")
     finally:
