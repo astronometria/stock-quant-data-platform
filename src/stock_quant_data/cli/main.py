@@ -20,6 +20,9 @@ from stock_quant_data.jobs.publish_release import run_publish_release
 from stock_quant_data.jobs.validate_release import run_validate_release
 from stock_quant_data.jobs.ingest_raw_prices_csv import run_ingest_raw_prices_csv
 from stock_quant_data.jobs.build_core_prices import run_build_core_prices
+from stock_quant_data.jobs.ingest_raw_prices_stooq_dir import (
+    run_ingest_raw_prices_stooq_dir,
+)
 
 
 def _print_help() -> None:
@@ -36,6 +39,7 @@ def _print_help() -> None:
               sq validate-release
               sq publish-release
               sq ingest-raw-prices-csv <csv_path>
+              sq ingest-raw-prices-stooq-dir <root_dir>
               sq build-core-prices
               sq help
             """
@@ -80,6 +84,15 @@ def main() -> None:
             print("Usage: sq ingest-raw-prices-csv <csv_path>")
             raise SystemExit(1)
         result = run_ingest_raw_prices_csv(sys.argv[2])
+        print(json.dumps(result, indent=2, sort_keys=True))
+        raise SystemExit(0)
+
+    if command == "ingest-raw-prices-stooq-dir":
+        if len(sys.argv) < 3:
+            print("ERROR: missing root_dir")
+            print("Usage: sq ingest-raw-prices-stooq-dir <root_dir>")
+            raise SystemExit(1)
+        result = run_ingest_raw_prices_stooq_dir(sys.argv[2])
         print(json.dumps(result, indent=2, sort_keys=True))
         raise SystemExit(0)
 

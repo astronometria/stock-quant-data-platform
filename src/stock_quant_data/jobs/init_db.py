@@ -38,6 +38,7 @@ def run_init_db() -> None:
     ddl_prices_foundation_path = project_root / "sql" / "ddl" / "003_prices_foundation.sql"
     ddl_prices_seed_path = project_root / "sql" / "ddl" / "004_prices_seed.sql"
     ddl_raw_prices_foundation_path = project_root / "sql" / "ddl" / "005_raw_prices_foundation.sql"
+    ddl_raw_stooq_prices_foundation_path = project_root / "sql" / "ddl" / "006_raw_stooq_prices_foundation.sql"
 
     views_universes_path = project_root / "sql" / "views" / "001_serving_universes.sql"
     views_symbols_path = project_root / "sql" / "views" / "002_api_symbols.sql"
@@ -57,6 +58,9 @@ def run_init_db() -> None:
 
         LOGGER.info("Executing DDL file: %s", ddl_raw_prices_foundation_path)
         connection.execute(_read_sql_file(ddl_raw_prices_foundation_path))
+
+        LOGGER.info("Executing DDL file: %s", ddl_raw_stooq_prices_foundation_path)
+        connection.execute(_read_sql_file(ddl_raw_stooq_prices_foundation_path))
 
         LOGGER.info("Executing API views file: %s", views_universes_path)
         connection.execute(_read_sql_file(views_universes_path))
