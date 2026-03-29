@@ -9,6 +9,7 @@ Important design rule:
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from textwrap import dedent
@@ -17,13 +18,13 @@ from stock_quant_data.config.logging import configure_logging
 from stock_quant_data.jobs.init_db import run_init_db
 from stock_quant_data.jobs.publish_release import run_publish_release
 from stock_quant_data.jobs.validate_release import run_validate_release
+from stock_quant_data.jobs.ingest_raw_prices_csv import run_ingest_raw_prices_csv
+from stock_quant_data.jobs.build_core_prices import run_build_core_prices
 
 
 def _print_help() -> None:
     """
     Print CLI help text.
-
-    The list remains intentionally short to avoid a script explosion.
     """
     print(
         dedent(
@@ -34,6 +35,8 @@ def _print_help() -> None:
               sq init-db
               sq validate-release
               sq publish-release
+              sq ingest-raw-prices-csv <csv_path>
+              sq build-core-prices
               sq help
             """
         ).strip()
@@ -43,11 +46,6 @@ def _print_help() -> None:
 def main() -> None:
     """
     Minimal command dispatcher.
-
-    Supported v1 commands:
-    - init-db
-    - validate-release
-    - publish-release
     """
     configure_logging(level=logging.INFO)
 
@@ -74,6 +72,20 @@ def main() -> None:
     if command == "publish-release":
         release_dir = run_publish_release()
         print(f"DONE: publish-release -> {release_dir}")
+        raise SystemExit(0)
+
+    if command == "ingest-raw-prices-csv":
+        if len(sys.argv) < 3:
+            print("ERROR: missing csv_path")
+            print("Usage: sq ingest-raw-prices-csv <csv_path>")
+            raise SystemExit(1)
+        result = run_ingest_raw_prices_csv(sys.argv[2])
+        print(json.dumps(result, indent=2, sort_keys=True))
+        raise SystemExit(0)
+
+    if command == "build-core-prices":
+        result = run_build_core_prices()
+        print(json.dumps(result, indent=2, sort_keys=True))
         raise SystemExit(0)
 
     print(f"ERROR: unknown command '{command}'")

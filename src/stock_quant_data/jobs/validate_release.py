@@ -75,38 +75,32 @@ def _read_sql_file(path: Path) -> str:
 def run_validate_release(write_checks_to_build: bool = True) -> ValidationReport:
     """
     Execute scientific validation checks against the build DB.
-
-    Parameters
-    ----------
-    write_checks_to_build:
-        If True, write a JSON report into data/build/checks_latest.json.
-
-    Returns
-    -------
-    ValidationReport
-        Full validation report.
-
-    Raises
-    ------
-    RuntimeError
-        If one or more blocking checks fail.
     """
     settings = get_settings()
     project_root = settings.project_root
-    checks_sql_path = project_root / "sql" / "checks" / "001_foundation_checks.sql"
+    foundation_checks_sql_path = project_root / "sql" / "checks" / "001_foundation_checks.sql"
+    price_checks_sql_path = project_root / "sql" / "checks" / "002_price_checks.sql"
     checks_output_path = project_root / "data" / "build" / "checks_latest.json"
 
     LOGGER.info("Opening build database for validation")
     connection = connect_build_db()
 
     try:
-        LOGGER.info("Executing validation checks file: %s", checks_sql_path)
-        rows = connection.execute(_read_sql_file(checks_sql_path)).fetchall()
+        LOGGER.info("Executing validation checks file: %s", foundation_checks_sql_path)
+        foundation_rows = connection.execute(
+            _read_sql_file(foundation_checks_sql_path)
+        ).fetchall()
+
+        LOGGER.info("Executing validation checks file: %s", price_checks_sql_path)
+        price_rows = connection.execute(
+            _read_sql_file(price_checks_sql_path)
+        ).fetchall()
     finally:
         connection.close()
 
     results: list[ValidationCheckResult] = []
-    for row in rows:
+
+    for row in foundation_rows + price_rows:
         results.append(
             ValidationCheckResult(
                 check_name=str(row[0]),
