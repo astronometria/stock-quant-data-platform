@@ -21,16 +21,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _read_sql_file(path: Path) -> str:
-    """
-    Read a SQL file as UTF-8 text.
-    """
     return path.read_text(encoding="utf-8")
 
 
 def run_init_db() -> None:
-    """
-    Initialize the build database with the core scientific foundation schema.
-    """
     project_root = Path(__file__).resolve().parents[3]
 
     ddl_foundation_path = project_root / "sql" / "ddl" / "001_core_foundation.sql"
@@ -39,12 +33,20 @@ def run_init_db() -> None:
     ddl_prices_seed_path = project_root / "sql" / "ddl" / "004_prices_seed.sql"
     ddl_raw_prices_foundation_path = project_root / "sql" / "ddl" / "005_raw_prices_foundation.sql"
     ddl_raw_stooq_prices_foundation_path = project_root / "sql" / "ddl" / "006_raw_stooq_prices_foundation.sql"
+    ddl_raw_yfinance_prices_foundation_path = project_root / "sql" / "ddl" / "007_raw_yfinance_prices_foundation.sql"
 
     views_universes_path = project_root / "sql" / "views" / "001_serving_universes.sql"
     views_symbols_path = project_root / "sql" / "views" / "002_api_symbols.sql"
     views_universe_snapshots_path = project_root / "sql" / "views" / "003_api_universe_snapshots.sql"
     views_listing_status_path = project_root / "sql" / "views" / "004_api_listing_status.sql"
     views_prices_path = project_root / "sql" / "views" / "005_api_prices.sql"
+    views_parsed_yfinance_path = project_root / "sql" / "views" / "006_parsed_yfinance_prices.sql"
+    views_parsed_stooq_path = project_root / "sql" / "views" / "007_parsed_stooq_prices.sql"
+    views_parsed_union_path = project_root / "sql" / "views" / "008_parsed_price_union.sql"
+    views_parsed_stooq_normalized_path = project_root / "sql" / "views" / "009_parsed_stooq_prices_normalized.sql"
+    views_market_classification_path = project_root / "sql" / "views" / "010_normalized_symbol_market_classification.sql"
+    views_instrument_classification_path = project_root / "sql" / "views" / "011_normalized_symbol_instrument_classification.sql"
+    views_instrument_classification_current_path = project_root / "sql" / "views" / "012_normalized_symbol_instrument_classification_current.sql"
 
     LOGGER.info("Opening build database")
     connection = connect_build_db()
@@ -61,6 +63,9 @@ def run_init_db() -> None:
 
         LOGGER.info("Executing DDL file: %s", ddl_raw_stooq_prices_foundation_path)
         connection.execute(_read_sql_file(ddl_raw_stooq_prices_foundation_path))
+
+        LOGGER.info("Executing DDL file: %s", ddl_raw_yfinance_prices_foundation_path)
+        connection.execute(_read_sql_file(ddl_raw_yfinance_prices_foundation_path))
 
         LOGGER.info("Executing API views file: %s", views_universes_path)
         connection.execute(_read_sql_file(views_universes_path))
@@ -121,6 +126,27 @@ def run_init_db() -> None:
 
         LOGGER.info("Executing prices API views file: %s", views_prices_path)
         connection.execute(_read_sql_file(views_prices_path))
+
+        LOGGER.info("Executing parsed yfinance view file: %s", views_parsed_yfinance_path)
+        connection.execute(_read_sql_file(views_parsed_yfinance_path))
+
+        LOGGER.info("Executing parsed stooq view file: %s", views_parsed_stooq_path)
+        connection.execute(_read_sql_file(views_parsed_stooq_path))
+
+        LOGGER.info("Executing parsed union view file: %s", views_parsed_union_path)
+        connection.execute(_read_sql_file(views_parsed_union_path))
+
+        LOGGER.info("Executing parsed stooq normalized view file: %s", views_parsed_stooq_normalized_path)
+        connection.execute(_read_sql_file(views_parsed_stooq_normalized_path))
+
+        LOGGER.info("Executing normalized market classification view file: %s", views_market_classification_path)
+        connection.execute(_read_sql_file(views_market_classification_path))
+
+        LOGGER.info("Executing normalized instrument classification view file: %s", views_instrument_classification_path)
+        connection.execute(_read_sql_file(views_instrument_classification_path))
+
+        LOGGER.info("Executing normalized instrument current classification view file: %s", views_instrument_classification_current_path)
+        connection.execute(_read_sql_file(views_instrument_classification_current_path))
 
         LOGGER.info("Database initialization completed successfully")
     finally:
