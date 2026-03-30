@@ -82,7 +82,7 @@ def run() -> None:
                     pc.raw_symbol,
                     string_agg(
                         DISTINCT (
-                            COALESCE(srh.symbol, '')
+                            srh.symbol
                             || ' @ '
                             || COALESCE(srh.exchange, 'UNKNOWN')
                             || ' #'
@@ -90,13 +90,13 @@ def run() -> None:
                         ),
                         ' | '
                         ORDER BY (
-                            COALESCE(srh.symbol, '')
+                            srh.symbol
                             || ' @ '
                             || COALESCE(srh.exchange, 'UNKNOWN')
                             || ' #'
                             || CAST(srh.instrument_id AS VARCHAR)
                         )
-                    ) AS nearby_reference_matches
+                    ) FILTER (WHERE srh.symbol IS NOT NULL) AS nearby_reference_matches
                 FROM priority_candidates AS pc
                 LEFT JOIN symbol_reference_history AS srh
                   ON srh.symbol LIKE (
@@ -127,7 +127,7 @@ def run() -> None:
                     ) AS in_latest_nasdaq_raw,
                     string_agg(
                         DISTINCT (
-                            COALESCE(nsd.symbol, '')
+                            nsd.symbol
                             || ' @ '
                             || COALESCE(nsd.exchange_code, 'UNKNOWN')
                             || ' / '
@@ -135,13 +135,13 @@ def run() -> None:
                         ),
                         ' | '
                         ORDER BY (
-                            COALESCE(nsd.symbol, '')
+                            nsd.symbol
                             || ' @ '
                             || COALESCE(nsd.exchange_code, 'UNKNOWN')
                             || ' / '
                             || COALESCE(nsd.security_name, '')
                         )
-                    ) AS nasdaq_exact_matches
+                    ) FILTER (WHERE nsd.symbol IS NOT NULL) AS nasdaq_exact_matches
                 FROM priority_candidates AS pc
                 CROSS JOIN latest_nasdaq_snapshot AS lns
                 LEFT JOIN nasdaq_symbol_directory_raw AS nsd
@@ -155,7 +155,7 @@ def run() -> None:
                     pc.raw_symbol,
                     string_agg(
                         DISTINCT (
-                            COALESCE(nsd.symbol, '')
+                            nsd.symbol
                             || ' @ '
                             || COALESCE(nsd.exchange_code, 'UNKNOWN')
                             || ' / '
@@ -163,13 +163,13 @@ def run() -> None:
                         ),
                         ' | '
                         ORDER BY (
-                            COALESCE(nsd.symbol, '')
+                            nsd.symbol
                             || ' @ '
                             || COALESCE(nsd.exchange_code, 'UNKNOWN')
                             || ' / '
                             || COALESCE(nsd.security_name, '')
                         )
-                    ) AS nasdaq_nearby_matches
+                    ) FILTER (WHERE nsd.symbol IS NOT NULL) AS nasdaq_nearby_matches
                 FROM priority_candidates AS pc
                 CROSS JOIN latest_nasdaq_snapshot AS lns
                 LEFT JOIN nasdaq_symbol_directory_raw AS nsd
@@ -195,7 +195,7 @@ def run() -> None:
                     ) AS in_targeted_sec_symbols,
                     string_agg(
                         DISTINCT (
-                            COALESCE(ss.symbol, '')
+                            ss.symbol
                             || ' @ CIK '
                             || COALESCE(ss.cik, '')
                             || ' / '
@@ -205,7 +205,7 @@ def run() -> None:
                         ),
                         ' | '
                         ORDER BY (
-                            COALESCE(ss.symbol, '')
+                            ss.symbol
                             || ' @ CIK '
                             || COALESCE(ss.cik, '')
                             || ' / '
@@ -213,9 +213,9 @@ def run() -> None:
                             || ' / '
                             || COALESCE(ss.exchange, 'UNKNOWN')
                         )
-                    ) AS sec_exact_matches
+                    ) FILTER (WHERE ss.symbol IS NOT NULL) AS sec_exact_matches
                 FROM priority_candidates AS pc
-                LEFT JOIN sec_submissions_symbol_targeted AS ss
+                LEFT JOIN sec_symbol_company_map_targeted AS ss
                   ON ss.symbol = pc.raw_symbol
                 GROUP BY pc.raw_symbol
             )
@@ -266,15 +266,14 @@ def run() -> None:
               ON nn.raw_symbol = pc.raw_symbol
             LEFT JOIN sec_exact AS se
               ON se.raw_symbol = pc.raw_symbol
-            ORDER BY pc.unresolved_row_count DESC, pc.raw_symbol
+            ORDER BY
+                pc.unresolved_row_count DESC,
+                pc.raw_symbol
             """
         )
 
-        probe_count = conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM high_priority_unresolved_symbol_probe
-            """
+        row_count = conn.execute(
+            "SELECT COUNT(*) FROM high_priority_unresolved_symbol_probe"
         ).fetchone()[0]
 
         by_recommendation = conn.execute(
@@ -290,8 +289,8 @@ def run() -> None:
             {
                 "status": "ok",
                 "job": "build-high-priority-unresolved-symbol-probe",
-                "probe_row_count": probe_count,
-                "rows_by_probe_recommendation": by_recommendation,
+                "probe_row_count": row_count,
+                "rows_by_recommendation": by_recommendation,
             }
         )
     finally:
