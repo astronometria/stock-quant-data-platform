@@ -9,6 +9,7 @@ Published objects in this version:
 - universe_membership_history
 - symbol_reference_history
 - listing_status_history
+- price_history
 
 Critical rule:
 publication is blocked if validation checks fail.
@@ -58,6 +59,22 @@ def read_table_rows(sql_text: str) -> list[tuple]:
         conn.close()
 
 
+def table_exists() -> bool:
+    conn = connect_build_db()
+    try:
+        row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = 'main'
+              AND table_name = 'price_history'
+            """
+        ).fetchone()
+        return bool(row[0])
+    finally:
+        conn.close()
+
+
 def build_manifest(
     repo_root: Path,
     release_id: str,
@@ -66,6 +83,7 @@ def build_manifest(
     membership_count: int,
     symbol_reference_count: int,
     listing_status_count: int,
+    price_history_count: int,
     checks_passed: bool,
 ) -> dict:
     now_utc = datetime.now(timezone.utc).isoformat()
@@ -84,6 +102,7 @@ def build_manifest(
             "universe_membership_history": membership_count,
             "symbol_reference_history": symbol_reference_count,
             "listing_status_history": listing_status_count,
+            "price_history": price_history_count,
         },
     }
 
@@ -97,6 +116,7 @@ def create_serving_db(
     membership_rows: list[tuple],
     symbol_reference_rows: list[tuple],
     listing_status_rows: list[tuple],
+    price_history_rows: list[tuple],
 ) -> Path:
     serving_db_path = release_dir / "serving.duckdb"
     conn = duckdb.connect(str(serving_db_path))
@@ -162,7 +182,6 @@ def create_serving_db(
             )
             """
         )
-
         if instrument_rows:
             conn.executemany(
                 """
@@ -189,7 +208,6 @@ def create_serving_db(
             )
             """
         )
-
         if universe_rows:
             conn.executemany(
                 """
@@ -219,7 +237,6 @@ def create_serving_db(
             )
             """
         )
-
         if membership_rows:
             conn.executemany(
                 """
@@ -254,7 +271,6 @@ def create_serving_db(
             )
             """
         )
-
         if symbol_reference_rows:
             conn.executemany(
                 """
@@ -290,7 +306,6 @@ def create_serving_db(
             )
             """
         )
-
         if listing_status_rows:
             conn.executemany(
                 """
@@ -309,6 +324,46 @@ def create_serving_db(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 listing_status_rows,
+            )
+
+        conn.execute(
+            """
+            CREATE TABLE price_history (
+                price_history_id BIGINT,
+                instrument_id BIGINT,
+                price_date DATE,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                adj_close DOUBLE,
+                volume BIGINT,
+                source_name VARCHAR,
+                observed_at TIMESTAMP,
+                ingested_at TIMESTAMP
+            )
+            """
+        )
+        if price_history_rows:
+            conn.executemany(
+                """
+                INSERT INTO price_history (
+                    price_history_id,
+                    instrument_id,
+                    price_date,
+                    open,
+                    high,
+                    low,
+                    close,
+                    adj_close,
+                    volume,
+                    source_name,
+                    observed_at,
+                    ingested_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                price_history_rows,
             )
     finally:
         conn.close()
@@ -337,81 +392,54 @@ def run() -> None:
 
     instrument_rows = read_table_rows(
         """
-        SELECT
-            instrument_id,
-            security_type,
-            company_id,
-            primary_ticker,
-            primary_exchange,
-            created_at
+        SELECT instrument_id, security_type, company_id, primary_ticker, primary_exchange, created_at
         FROM instrument
         ORDER BY instrument_id
         """
     )
-
     universe_rows = read_table_rows(
         """
-        SELECT
-            universe_id,
-            universe_name,
-            description,
-            created_at
+        SELECT universe_id, universe_name, description, created_at
         FROM universe_definition
         ORDER BY universe_name
         """
     )
-
     membership_rows = read_table_rows(
         """
-        SELECT
-            universe_membership_history_id,
-            universe_id,
-            instrument_id,
-            membership_status,
-            effective_from,
-            effective_to,
-            source_name,
-            observed_at,
-            ingested_at
+        SELECT universe_membership_history_id, universe_id, instrument_id, membership_status,
+               effective_from, effective_to, source_name, observed_at, ingested_at
         FROM universe_membership_history
         ORDER BY universe_id, instrument_id, effective_from
         """
     )
-
     symbol_reference_rows = read_table_rows(
         """
-        SELECT
-            symbol_reference_history_id,
-            instrument_id,
-            symbol,
-            exchange,
-            is_primary,
-            effective_from,
-            effective_to,
-            observed_at,
-            ingested_at
+        SELECT symbol_reference_history_id, instrument_id, symbol, exchange, is_primary,
+               effective_from, effective_to, observed_at, ingested_at
         FROM symbol_reference_history
         ORDER BY symbol, effective_from, symbol_reference_history_id
         """
     )
-
     listing_status_rows = read_table_rows(
         """
-        SELECT
-            listing_status_history_id,
-            instrument_id,
-            symbol,
-            listing_status,
-            event_type,
-            effective_from,
-            effective_to,
-            source_name,
-            observed_at,
-            ingested_at
+        SELECT listing_status_history_id, instrument_id, symbol, listing_status, event_type,
+               effective_from, effective_to, source_name, observed_at, ingested_at
         FROM listing_status_history
         ORDER BY instrument_id, effective_from, listing_status_history_id
         """
     )
+
+    if table_exists():
+        price_history_rows = read_table_rows(
+            """
+            SELECT price_history_id, instrument_id, price_date, open, high, low, close,
+                   adj_close, volume, source_name, observed_at, ingested_at
+            FROM price_history
+            ORDER BY instrument_id, price_date, price_history_id
+            """
+        )
+    else:
+        price_history_rows = []
 
     release_dir = create_release_dir()
     release_id = release_dir.name
@@ -424,6 +452,7 @@ def run() -> None:
         membership_count=len(membership_rows),
         symbol_reference_count=len(symbol_reference_rows),
         listing_status_count=len(listing_status_rows),
+        price_history_count=len(price_history_rows),
         checks_passed=checks_payload["checks_passed"],
     )
 
@@ -436,6 +465,7 @@ def run() -> None:
         membership_rows=membership_rows,
         symbol_reference_rows=symbol_reference_rows,
         listing_status_rows=listing_status_rows,
+        price_history_rows=price_history_rows,
     )
 
     manifest_path = release_dir / "manifest.json"
@@ -467,6 +497,7 @@ def run() -> None:
             "published_universe_membership_history_rows": len(membership_rows),
             "published_symbol_reference_history_rows": len(symbol_reference_rows),
             "published_listing_status_history_rows": len(listing_status_rows),
+            "published_price_history_rows": len(price_history_rows),
         }
     )
 

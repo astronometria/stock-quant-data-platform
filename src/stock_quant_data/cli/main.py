@@ -21,6 +21,7 @@ from stock_quant_data.jobs.seed_instruments import run as run_seed_instruments
 from stock_quant_data.jobs.seed_listing_status_history import (
     run as run_seed_listing_status_history,
 )
+from stock_quant_data.jobs.seed_price_history import run as run_seed_price_history
 from stock_quant_data.jobs.seed_symbol_reference_history import (
     run as run_seed_symbol_reference_history,
 )
@@ -45,6 +46,7 @@ def main() -> None:
                   sq seed-instruments
                   sq seed-symbol-reference-history
                   sq seed-listing-status-history
+                  sq seed-price-history
                   sq seed-universes
                   sq seed-universe-membership-history
                   sq validate-release
@@ -72,6 +74,10 @@ def main() -> None:
 
     if cmd == "seed-listing-status-history":
         run_seed_listing_status_history()
+        raise SystemExit(0)
+
+    if cmd == "seed-price-history":
+        run_seed_price_history()
         raise SystemExit(0)
 
     if cmd == "seed-universes":
