@@ -1,172 +1,128 @@
 """
-Thin CLI entrypoint.
+Main CLI entrypoint for stock-quant-data-platform.
 
-Each command dispatches to a dedicated job module.
+This module keeps CLI wiring explicit and simple.
+Each command maps to one job runner.
 """
 
 from __future__ import annotations
 
 import sys
-from textwrap import dedent
 
-from stock_quant_data.jobs.build_price_history_from_raw import (
-    run as run_build_price_history_from_raw,
+from stock_quant_data.jobs.build_high_priority_unresolved_symbol_probe import (
+    run as run_build_high_priority_unresolved_symbol_probe,
 )
-from stock_quant_data.jobs.build_symbol_reference_from_nasdaq_latest import (
-    run as run_build_symbol_reference_from_nasdaq_latest,
+from stock_quant_data.jobs.build_price_history_from_raw import run as run_build_price_history_from_raw
+from stock_quant_data.jobs.build_price_normalized_from_raw import run as run_build_price_normalized_from_raw
+from stock_quant_data.jobs.build_stooq_symbol_normalization_map import run as run_build_stooq_symbol_normalization_map
+from stock_quant_data.jobs.build_symbol_manual_override_map import run as run_build_symbol_manual_override_map
+from stock_quant_data.jobs.build_symbol_reference_candidates_from_unresolved_stooq import (
+    run as run_build_symbol_reference_candidates_from_unresolved_stooq,
 )
-from stock_quant_data.jobs.build_price_normalized_from_raw import (
-    run as run_build_price_normalized_from_raw,
+from stock_quant_data.jobs.build_symbol_reference_from_nasdaq_latest import run as run_build_symbol_reference_from_nasdaq_latest
+from stock_quant_data.jobs.build_symbol_reference_history_from_nasdaq_snapshots import (
+    run as run_build_symbol_reference_history_from_nasdaq_snapshots,
 )
-from stock_quant_data.jobs.init_db import run as run_init_db
+from stock_quant_data.jobs.enrich_symbol_reference_from_manual_overrides import (
+    run as run_enrich_symbol_reference_from_manual_overrides,
+)
 from stock_quant_data.jobs.init_price_raw_tables import run as run_init_price_raw_tables
-from stock_quant_data.jobs.insert_invalid_universe_overlap_demo import (
-    run as run_insert_invalid_universe_overlap_demo,
+from stock_quant_data.jobs.load_nasdaq_symbol_directory_raw_from_downloader import (
+    run as run_load_nasdaq_symbol_directory_raw_from_downloader,
 )
 from stock_quant_data.jobs.load_price_source_daily_raw_stooq_from_disk import (
     run as run_load_price_source_daily_raw_stooq_from_disk,
 )
-from stock_quant_data.jobs.load_nasdaq_symbol_directory_raw_from_downloader import (
-    run as run_load_nasdaq_symbol_directory_raw_from_downloader,
+from stock_quant_data.jobs.load_sec_submissions_identity_from_downloader import (
+    run as run_load_sec_submissions_identity_from_downloader,
+)
+from stock_quant_data.jobs.load_sec_submissions_identity_targeted import (
+    run as run_load_sec_submissions_identity_targeted,
 )
 from stock_quant_data.jobs.publish_release import run as run_publish_release
-from stock_quant_data.jobs.remove_invalid_universe_overlap_demo import (
-    run as run_remove_invalid_universe_overlap_demo,
-)
-from stock_quant_data.jobs.seed_instruments import run as run_seed_instruments
-from stock_quant_data.jobs.seed_listing_status_history import (
-    run as run_seed_listing_status_history,
-)
-from stock_quant_data.jobs.seed_price_history import run as run_seed_price_history
-from stock_quant_data.jobs.seed_price_raw_demo import run as run_seed_price_raw_demo
-from stock_quant_data.jobs.seed_price_raw_yahoo_cutover_demo import (
-    run as run_seed_price_raw_yahoo_cutover_demo,
-)
-from stock_quant_data.jobs.seed_symbol_reference_history import (
-    run as run_seed_symbol_reference_history,
-)
-from stock_quant_data.jobs.seed_universe_membership_history import (
-    run as run_seed_universe_membership_history,
-)
-from stock_quant_data.jobs.seed_universes import run as run_seed_universes
 from stock_quant_data.jobs.validate_release import run as run_validate_release
 
 
-def main() -> None:
-    argv = sys.argv[1:]
+def main() -> int:
+    """
+    Dispatch CLI commands to the correct job runner.
 
-    if not argv:
-        print(
-            dedent(
-                """
-                stock-quant-data-platform CLI
+    The CLI is intentionally explicit instead of dynamic so command wiring
+    stays readable and easy to audit.
+    """
+    if len(sys.argv) < 2:
+        print("Usage: sq <command>")
+        return 1
 
-                Available commands:
-                  sq init-db
-                  sq init-price-raw-tables
-                  sq load-price-source-daily-raw-stooq-from-disk
-                  sq load-nasdaq-symbol-directory-raw-from-downloader
-                  sq seed-instruments
-                  sq seed-symbol-reference-history
-                  sq seed-listing-status-history
-                  sq seed-price-history
-                  sq seed-price-raw-demo
-                  sq seed-price-raw-yahoo-cutover-demo
-                  sq build-price-normalized-from-raw
-                  sq build-price-history-from-raw
-                  sq build-symbol-reference-from-nasdaq-latest
-                  sq seed-universes
-                  sq seed-universe-membership-history
-                  sq validate-release
-                  sq publish-release
-                  sq insert-invalid-universe-overlap-demo
-                  sq remove-invalid-universe-overlap-demo
-                """
-            ).strip()
-        )
-        raise SystemExit(0)
+    command = sys.argv[1]
 
-    cmd = argv[0].strip().lower()
-
-    if cmd == "init-db":
-        run_init_db()
-        raise SystemExit(0)
-
-    if cmd == "init-price-raw-tables":
+    if command == "init-price-raw-tables":
         run_init_price_raw_tables()
-        raise SystemExit(0)
+        return 0
 
-    if cmd == "load-price-source-daily-raw-stooq-from-disk":
+    if command == "load-price-source-daily-raw-stooq-from-disk":
         run_load_price_source_daily_raw_stooq_from_disk()
-        raise SystemExit(0)
+        return 0
 
-    if cmd == "load-nasdaq-symbol-directory-raw-from-downloader":
-        run_load_nasdaq_symbol_directory_raw_from_downloader()
-        raise SystemExit(0)
+    if command == "build-stooq-symbol-normalization-map":
+        run_build_stooq_symbol_normalization_map()
+        return 0
 
-    if cmd == "seed-instruments":
-        run_seed_instruments()
-        raise SystemExit(0)
+    if command == "build-symbol-manual-override-map":
+        run_build_symbol_manual_override_map()
+        return 0
 
-    if cmd == "seed-symbol-reference-history":
-        run_seed_symbol_reference_history()
-        raise SystemExit(0)
+    if command == "enrich-symbol-reference-from-manual-overrides":
+        run_enrich_symbol_reference_from_manual_overrides()
+        return 0
 
-    if cmd == "seed-listing-status-history":
-        run_seed_listing_status_history()
-        raise SystemExit(0)
-
-    if cmd == "seed-price-history":
-        run_seed_price_history()
-        raise SystemExit(0)
-
-    if cmd == "seed-price-raw-demo":
-        run_seed_price_raw_demo()
-        raise SystemExit(0)
-
-    if cmd == "seed-price-raw-yahoo-cutover-demo":
-        run_seed_price_raw_yahoo_cutover_demo()
-        raise SystemExit(0)
-
-    if cmd == "build-price-normalized-from-raw":
+    if command == "build-price-normalized-from-raw":
         run_build_price_normalized_from_raw()
-        raise SystemExit(0)
+        return 0
 
-    if cmd == "build-price-history-from-raw":
+    if command == "build-price-history-from-raw":
         run_build_price_history_from_raw()
-        raise SystemExit(0)
+        return 0
 
-    if cmd == "build-symbol-reference-from-nasdaq-latest":
+    if command == "load-nasdaq-symbol-directory-raw-from-downloader":
+        run_load_nasdaq_symbol_directory_raw_from_downloader()
+        return 0
+
+    if command == "build-symbol-reference-from-nasdaq-latest":
         run_build_symbol_reference_from_nasdaq_latest()
-        raise SystemExit(0)
+        return 0
 
-    if cmd == "seed-universes":
-        run_seed_universes()
-        raise SystemExit(0)
+    if command == "build-symbol-reference-history-from-nasdaq-snapshots":
+        run_build_symbol_reference_history_from_nasdaq_snapshots()
+        return 0
 
-    if cmd == "seed-universe-membership-history":
-        run_seed_universe_membership_history()
-        raise SystemExit(0)
+    if command == "load-sec-submissions-identity-from-downloader":
+        run_load_sec_submissions_identity_from_downloader()
+        return 0
 
-    if cmd == "validate-release":
+    if command == "load-sec-submissions-identity-targeted":
+        run_load_sec_submissions_identity_targeted()
+        return 0
+
+    if command == "build-symbol-reference-candidates-from-unresolved-stooq":
+        run_build_symbol_reference_candidates_from_unresolved_stooq()
+        return 0
+
+    if command == "build-high-priority-unresolved-symbol-probe":
+        run_build_high_priority_unresolved_symbol_probe()
+        return 0
+
+    if command == "validate-release":
         run_validate_release()
-        raise SystemExit(0)
+        return 0
 
-    if cmd == "publish-release":
+    if command == "publish-release":
         run_publish_release()
-        raise SystemExit(0)
+        return 0
 
-    if cmd == "insert-invalid-universe-overlap-demo":
-        run_insert_invalid_universe_overlap_demo()
-        raise SystemExit(0)
-
-    if cmd == "remove-invalid-universe-overlap-demo":
-        run_remove_invalid_universe_overlap_demo()
-        raise SystemExit(0)
-
-    print(f"Unknown command: {cmd}")
-    raise SystemExit(1)
+    print(f"Unknown command: {command}")
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

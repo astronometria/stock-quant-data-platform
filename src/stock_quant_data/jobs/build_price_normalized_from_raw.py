@@ -1,10 +1,10 @@
 """
 Build the unified normalized daily price staging table from raw source tables.
 
-SQL-first design:
-- rebuild normalized table from scratch
-- generate normalized ids with ROW_NUMBER instead of relying on raw ids
-- keep source_row_id for lineage, but not as the PK
+Resolution order for Stooq:
+1. direct symbol_reference_history
+2. stooq_symbol_normalization_map
+3. symbol_manual_override_map
 """
 
 from __future__ import annotations
@@ -75,7 +75,11 @@ def run() -> None:
                 SELECT
                     rs.raw_stooq_id AS source_row_id,
                     rs.raw_symbol,
-                    srh.instrument_id,
+                    srh_direct.instrument_id AS direct_instrument_id,
+                    srh_norm.instrument_id AS normalized_instrument_id,
+                    srh_manual.instrument_id AS manual_instrument_id,
+                    nm.normalized_symbol,
+                    mo.mapped_symbol AS manual_symbol,
                     rs.price_date,
                     rs.open,
                     rs.high,
@@ -83,28 +87,30 @@ def run() -> None:
                     rs.close,
                     rs.close AS adj_close,
                     CAST(ROUND(COALESCE(rs.raw_volume, 0)) AS BIGINT) AS volume,
-                    CASE
-                        WHEN srh.instrument_id IS NOT NULL THEN 'RESOLVED'
-                        ELSE 'UNRESOLVED'
-                    END AS symbol_resolution_status,
-                    CASE
-                        WHEN srh.instrument_id IS NOT NULL THEN 'resolved via symbol_reference_history'
-                        ELSE 'no matching open-ended symbol mapping found'
-                    END AS normalization_notes,
                     ROW_NUMBER() OVER (
                         ORDER BY rs.raw_symbol, rs.price_date, rs.source_file, rs.raw_time, rs.raw_ticker
                     ) AS rn
                 FROM price_source_daily_raw_stooq AS rs
-                LEFT JOIN symbol_reference_history AS srh
-                  ON srh.symbol = rs.raw_symbol
-                 AND srh.effective_to IS NULL
+                LEFT JOIN symbol_reference_history AS srh_direct
+                  ON srh_direct.symbol = rs.raw_symbol
+                 AND srh_direct.effective_to IS NULL
+                LEFT JOIN stooq_symbol_normalization_map AS nm
+                  ON nm.raw_symbol = rs.raw_symbol
+                LEFT JOIN symbol_reference_history AS srh_norm
+                  ON srh_norm.symbol = nm.normalized_symbol
+                 AND srh_norm.effective_to IS NULL
+                LEFT JOIN symbol_manual_override_map AS mo
+                  ON mo.raw_symbol = rs.raw_symbol
+                LEFT JOIN symbol_reference_history AS srh_manual
+                  ON srh_manual.symbol = mo.mapped_symbol
+                 AND srh_manual.effective_to IS NULL
             )
             SELECT
                 {STOOQ_ID_OFFSET} + rn AS normalized_price_id,
                 'stooq' AS source_name,
                 source_row_id,
                 raw_symbol,
-                instrument_id,
+                COALESCE(direct_instrument_id, normalized_instrument_id, manual_instrument_id) AS instrument_id,
                 price_date,
                 open,
                 high,
@@ -112,8 +118,16 @@ def run() -> None:
                 close,
                 adj_close,
                 volume,
-                symbol_resolution_status,
-                normalization_notes
+                CASE
+                    WHEN COALESCE(direct_instrument_id, normalized_instrument_id, manual_instrument_id) IS NOT NULL THEN 'RESOLVED'
+                    ELSE 'UNRESOLVED'
+                END AS symbol_resolution_status,
+                CASE
+                    WHEN direct_instrument_id IS NOT NULL THEN 'resolved via direct symbol_reference_history'
+                    WHEN normalized_instrument_id IS NOT NULL THEN 'resolved via stooq_symbol_normalization_map'
+                    WHEN manual_instrument_id IS NOT NULL THEN 'resolved via symbol_manual_override_map'
+                    ELSE 'no matching symbol mapping found'
+                END AS normalization_notes
             FROM staged
             """
         )
@@ -148,14 +162,6 @@ def run() -> None:
                     ry.close,
                     ry.adj_close,
                     ry.volume,
-                    CASE
-                        WHEN srh.instrument_id IS NOT NULL THEN 'RESOLVED'
-                        ELSE 'UNRESOLVED'
-                    END AS symbol_resolution_status,
-                    CASE
-                        WHEN srh.instrument_id IS NOT NULL THEN 'resolved via symbol_reference_history'
-                        ELSE 'no matching open-ended symbol mapping found'
-                    END AS normalization_notes,
                     ROW_NUMBER() OVER (
                         ORDER BY ry.raw_symbol, ry.price_date, ry.raw_yahoo_id
                     ) AS rn
@@ -177,8 +183,14 @@ def run() -> None:
                 close,
                 adj_close,
                 volume,
-                symbol_resolution_status,
-                normalization_notes
+                CASE
+                    WHEN instrument_id IS NOT NULL THEN 'RESOLVED'
+                    ELSE 'UNRESOLVED'
+                END AS symbol_resolution_status,
+                CASE
+                    WHEN instrument_id IS NOT NULL THEN 'resolved via symbol_reference_history'
+                    ELSE 'no matching open-ended symbol mapping found'
+                END AS normalization_notes
             FROM staged
             """
         )
