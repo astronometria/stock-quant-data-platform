@@ -1,111 +1,75 @@
 """
-Minimal CLI entrypoint with basic command dispatch.
+Thin CLI entrypoint.
 
-Important design rule:
-- CLI stays thin
-- jobs do the real work
-- SQL remains the source of truth for schema and projections
+Each command dispatches to a dedicated job module.
 """
 
 from __future__ import annotations
 
-import json
-import logging
 import sys
 from textwrap import dedent
 
-from stock_quant_data.config.logging import configure_logging
-from stock_quant_data.jobs.init_db import run_init_db
-from stock_quant_data.jobs.publish_release import run_publish_release
-from stock_quant_data.jobs.validate_release import run_validate_release
-from stock_quant_data.jobs.ingest_raw_prices_csv import run_ingest_raw_prices_csv
-from stock_quant_data.jobs.ingest_raw_prices_stooq_dir import run_ingest_raw_prices_stooq_dir
-from stock_quant_data.jobs.ingest_raw_prices_yfinance_dir import run_ingest_raw_prices_yfinance_dir
-from stock_quant_data.jobs.build_core_prices import run_build_core_prices
-
-
-def _print_help() -> None:
-    print(
-        dedent(
-            """
-            stock-quant-data-platform CLI
-
-            Commands:
-              sq init-db
-              sq validate-release
-              sq publish-release
-              sq ingest-raw-prices-csv <csv_path>
-              sq ingest-raw-prices-stooq-dir <root_dir>
-              sq ingest-raw-prices-yfinance-dir <root_dir>
-              sq build-core-prices
-              sq help
-            """
-        ).strip()
-    )
+from stock_quant_data.jobs.init_db import run as run_init_db
+from stock_quant_data.jobs.publish_release import run as run_publish_release
+from stock_quant_data.jobs.seed_instruments import run as run_seed_instruments
+from stock_quant_data.jobs.seed_universes import run as run_seed_universes
+from stock_quant_data.jobs.seed_universe_membership_history import (
+    run as run_seed_universe_membership_history,
+)
+from stock_quant_data.jobs.validate_release import run as run_validate_release
 
 
 def main() -> None:
-    configure_logging(level=logging.INFO)
+    """
+    Dispatch the requested CLI command.
+    """
+    argv = sys.argv[1:]
 
-    if len(sys.argv) <= 1:
-        _print_help()
+    if not argv:
+        print(
+            dedent(
+                """
+                stock-quant-data-platform CLI
+
+                Available commands:
+                  sq init-db
+                  sq seed-instruments
+                  sq seed-universes
+                  sq seed-universe-membership-history
+                  sq validate-release
+                  sq publish-release
+                """
+            ).strip()
+        )
         raise SystemExit(0)
 
-    command = sys.argv[1].strip().lower()
+    cmd = argv[0].strip().lower()
 
-    if command == "help":
-        _print_help()
-        raise SystemExit(0)
-
-    if command == "init-db":
+    if cmd == "init-db":
         run_init_db()
-        print("DONE: init-db")
         raise SystemExit(0)
 
-    if command == "validate-release":
-        report = run_validate_release(write_checks_to_build=True)
-        print(f"DONE: validate-release -> checks_passed={report.checks_passed}")
+    if cmd == "seed-instruments":
+        run_seed_instruments()
         raise SystemExit(0)
 
-    if command == "publish-release":
-        release_dir = run_publish_release()
-        print(f"DONE: publish-release -> {release_dir}")
+    if cmd == "seed-universes":
+        run_seed_universes()
         raise SystemExit(0)
 
-    if command == "ingest-raw-prices-csv":
-        if len(sys.argv) < 3:
-            print("ERROR: missing csv_path")
-            print("Usage: sq ingest-raw-prices-csv <csv_path>")
-            raise SystemExit(1)
-        result = run_ingest_raw_prices_csv(sys.argv[2])
-        print(json.dumps(result, indent=2, sort_keys=True))
+    if cmd == "seed-universe-membership-history":
+        run_seed_universe_membership_history()
         raise SystemExit(0)
 
-    if command == "ingest-raw-prices-stooq-dir":
-        if len(sys.argv) < 3:
-            print("ERROR: missing root_dir")
-            print("Usage: sq ingest-raw-prices-stooq-dir <root_dir>")
-            raise SystemExit(1)
-        result = run_ingest_raw_prices_stooq_dir(sys.argv[2])
-        print(json.dumps(result, indent=2, sort_keys=True))
+    if cmd == "validate-release":
+        run_validate_release()
         raise SystemExit(0)
 
-    if command == "ingest-raw-prices-yfinance-dir":
-        if len(sys.argv) < 3:
-            print("ERROR: missing root_dir")
-            print("Usage: sq ingest-raw-prices-yfinance-dir <root_dir>")
-            raise SystemExit(1)
-        result = run_ingest_raw_prices_yfinance_dir(sys.argv[2])
-        print(json.dumps(result, indent=2, sort_keys=True))
+    if cmd == "publish-release":
+        run_publish_release()
         raise SystemExit(0)
 
-    if command == "build-core-prices":
-        result = run_build_core_prices()
-        print(json.dumps(result, indent=2, sort_keys=True))
-        raise SystemExit(0)
-
-    print(f"ERROR: unknown command '{command}'")
-    _print_help()
+    print(f"Unknown command: {cmd}")
     raise SystemExit(1)
 
 

@@ -1,122 +1,370 @@
 """
-Release publication job.
+Publish an immutable serving release.
 
-This job:
-- verifies that the build DB exists
-- executes blocking scientific validation checks
-- creates a new release directory
-- copies the full build DB into the release as serving.duckdb
-- writes a manifest
-- writes checks.json from the validation report
-- switches the current symlink atomically
+Published objects in this version:
+- serving_release_metadata
+- instrument
+- universe_definition
+- universe_membership_history
 
-This is intentionally simple and robust for the first serving release.
+Scientific rule:
+the API serves only what has been explicitly published.
+
+Critical rule:
+publication is blocked if validation checks fail.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 import logging
-import shutil
+import subprocess
 
+import duckdb
+
+from stock_quant_data.config.logging import configure_logging
 from stock_quant_data.config.settings import get_settings
 from stock_quant_data.db.connections import connect_build_db
 from stock_quant_data.db.publish import (
     create_release_dir,
     switch_current_release_symlink,
-    utc_release_id,
-    write_manifest,
 )
-from stock_quant_data.jobs.validate_release import run_validate_release
+from stock_quant_data.jobs.validate_release import build_checks_payload
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _collect_row_counts() -> dict[str, int]:
-    """
-    Collect minimal row counts from important core tables.
-
-    This gives the release manifest quick visibility into what was published.
-    """
-    connection = connect_build_db()
-
+def detect_git_commit(repo_root: Path) -> str | None:
     try:
-        table_names = [
-            "core.instrument",
-            "core.symbol_reference_history",
-            "core.listing_status_history",
-            "core.universe_definition",
-            "core.universe_membership_history",
-        ]
-
-        results: dict[str, int] = {}
-
-        for table_name in table_names:
-            count_value = connection.execute(
-                f"SELECT COUNT(*) FROM {table_name}"
-            ).fetchone()[0]
-            results[table_name] = int(count_value)
-
-        return results
-    finally:
-        connection.close()
-
-
-def run_publish_release() -> Path:
-    """
-    Publish a new immutable serving release.
-
-    Returns
-    -------
-    Path
-        The newly created release directory.
-    """
-    settings = get_settings()
-    build_db_path = settings.build_db_path
-
-    if not build_db_path.exists():
-        raise FileNotFoundError(
-            f"Build database does not exist: {build_db_path}"
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
         )
+        return result.stdout.strip() or None
+    except Exception:
+        return None
 
-    LOGGER.info("Running blocking scientific validation before publication")
-    validation_report = run_validate_release(write_checks_to_build=True)
 
-    release_id = utc_release_id()
-    release_dir = create_release_dir(release_id=release_id)
-    serving_db_path = release_dir / "serving.duckdb"
+def read_table_rows(sql_text: str) -> list[tuple]:
+    """
+    Read rows from the build database using the supplied SQL text.
+    """
+    conn = connect_build_db()
+    try:
+        return conn.execute(sql_text).fetchall()
+    finally:
+        conn.close()
 
-    LOGGER.info("Creating release directory: %s", release_dir)
-    LOGGER.info("Copying build DB to serving DB: %s -> %s", build_db_path, serving_db_path)
 
-    shutil.copy2(build_db_path, serving_db_path)
+def build_manifest(
+    repo_root: Path,
+    release_id: str,
+    instrument_count: int,
+    universe_count: int,
+    membership_count: int,
+    checks_passed: bool,
+) -> dict:
+    """
+    Build a release manifest documenting what was published.
+    """
+    now_utc = datetime.now(timezone.utc).isoformat()
 
-    row_counts = _collect_row_counts()
-
-    manifest = {
+    return {
         "release_id": release_id,
-        "build_db_path": str(build_db_path),
-        "serving_db_path": str(serving_db_path),
-        "published_at": datetime.now(timezone.utc).isoformat(),
-        "checks_passed": validation_report.checks_passed,
-        "row_counts": row_counts,
-        "notes": "Immutable serving release copied from build database after blocking validation."
+        "build_started_at": None,
+        "build_finished_at": now_utc,
+        "published_at": now_utc,
+        "schema_version": "v1",
+        "checks_passed": checks_passed,
+        "build_git_commit": detect_git_commit(repo_root),
+        "published_row_counts": {
+            "instrument": instrument_count,
+            "universe_definition": universe_count,
+            "universe_membership_history": membership_count,
+        },
     }
 
-    write_manifest(release_dir, manifest)
+
+def create_serving_db(
+    release_dir: Path,
+    manifest: dict,
+    checks_payload: dict,
+    instrument_rows: list[tuple],
+    universe_rows: list[tuple],
+    membership_rows: list[tuple],
+) -> Path:
+    """
+    Create the serving DB and load the explicitly published tables.
+    """
+    serving_db_path = release_dir / "serving.duckdb"
+    conn = duckdb.connect(str(serving_db_path))
+
+    try:
+        conn.execute(
+            """
+            CREATE TABLE serving_release_metadata (
+                release_id VARCHAR,
+                schema_version VARCHAR,
+                published_at VARCHAR,
+                checks_passed BOOLEAN,
+                build_git_commit VARCHAR
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            INSERT INTO serving_release_metadata (
+                release_id,
+                schema_version,
+                published_at,
+                checks_passed,
+                build_git_commit
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                manifest["release_id"],
+                manifest["schema_version"],
+                manifest["published_at"],
+                manifest["checks_passed"],
+                manifest["build_git_commit"],
+            ],
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE serving_release_checks (
+                checks_json VARCHAR
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            INSERT INTO serving_release_checks (checks_json)
+            VALUES (?)
+            """,
+            [json.dumps(checks_payload, sort_keys=True)],
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE instrument (
+                instrument_id BIGINT,
+                security_type VARCHAR,
+                company_id VARCHAR,
+                primary_ticker VARCHAR,
+                primary_exchange VARCHAR,
+                created_at TIMESTAMP
+            )
+            """
+        )
+
+        if instrument_rows:
+            conn.executemany(
+                """
+                INSERT INTO instrument (
+                    instrument_id,
+                    security_type,
+                    company_id,
+                    primary_ticker,
+                    primary_exchange,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                instrument_rows,
+            )
+
+        conn.execute(
+            """
+            CREATE TABLE universe_definition (
+                universe_id BIGINT,
+                universe_name VARCHAR,
+                description VARCHAR,
+                created_at TIMESTAMP
+            )
+            """
+        )
+
+        if universe_rows:
+            conn.executemany(
+                """
+                INSERT INTO universe_definition (
+                    universe_id,
+                    universe_name,
+                    description,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                universe_rows,
+            )
+
+        conn.execute(
+            """
+            CREATE TABLE universe_membership_history (
+                universe_membership_history_id BIGINT,
+                universe_id BIGINT,
+                instrument_id BIGINT,
+                membership_status VARCHAR,
+                effective_from DATE,
+                effective_to DATE,
+                source_name VARCHAR,
+                observed_at TIMESTAMP,
+                ingested_at TIMESTAMP
+            )
+            """
+        )
+
+        if membership_rows:
+            conn.executemany(
+                """
+                INSERT INTO universe_membership_history (
+                    universe_membership_history_id,
+                    universe_id,
+                    instrument_id,
+                    membership_status,
+                    effective_from,
+                    effective_to,
+                    source_name,
+                    observed_at,
+                    ingested_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                membership_rows,
+            )
+    finally:
+        conn.close()
+
+    return serving_db_path
+
+
+def run() -> None:
+    """
+    Publish a new immutable release and repoint data/current.
+
+    This job refuses to publish if validation fails.
+    """
+    configure_logging()
+    settings = get_settings()
+    repo_root = Path(__file__).resolve().parents[3]
+
+    LOGGER.info("publish-release started")
+
+    build_conn = connect_build_db()
+    try:
+        build_conn.execute("SELECT 1")
+    finally:
+        build_conn.close()
+
+    checks_payload = build_checks_payload()
+    if not checks_payload["checks_passed"]:
+        raise RuntimeError(
+            f"Refusing to publish because validation failed: {json.dumps(checks_payload, sort_keys=True)}"
+        )
+
+    instrument_rows = read_table_rows(
+        """
+        SELECT
+            instrument_id,
+            security_type,
+            company_id,
+            primary_ticker,
+            primary_exchange,
+            created_at
+        FROM instrument
+        ORDER BY instrument_id
+        """
+    )
+
+    universe_rows = read_table_rows(
+        """
+        SELECT
+            universe_id,
+            universe_name,
+            description,
+            created_at
+        FROM universe_definition
+        ORDER BY universe_name
+        """
+    )
+
+    membership_rows = read_table_rows(
+        """
+        SELECT
+            universe_membership_history_id,
+            universe_id,
+            instrument_id,
+            membership_status,
+            effective_from,
+            effective_to,
+            source_name,
+            observed_at,
+            ingested_at
+        FROM universe_membership_history
+        ORDER BY universe_id, instrument_id, effective_from
+        """
+    )
+
+    release_dir = create_release_dir()
+    release_id = release_dir.name
+
+    manifest = build_manifest(
+        repo_root=repo_root,
+        release_id=release_id,
+        instrument_count=len(instrument_rows),
+        universe_count=len(universe_rows),
+        membership_count=len(membership_rows),
+        checks_passed=checks_payload["checks_passed"],
+    )
+
+    serving_db_path = create_serving_db(
+        release_dir=release_dir,
+        manifest=manifest,
+        checks_payload=checks_payload,
+        instrument_rows=instrument_rows,
+        universe_rows=universe_rows,
+        membership_rows=membership_rows,
+    )
+
+    manifest_path = release_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
     checks_path = release_dir / "checks.json"
     checks_path.write_text(
-        __import__("json").dumps(
-            validation_report.to_dict(),
-            indent=2,
-            sort_keys=True,
-        ),
+        json.dumps(checks_payload, indent=2, sort_keys=True),
         encoding="utf-8",
     )
 
     switch_current_release_symlink(release_dir)
 
-    LOGGER.info("Published release: %s", release_dir)
-    return release_dir
+    print(
+        {
+            "status": "ok",
+            "job": "publish-release",
+            "release_id": release_id,
+            "release_dir": str(release_dir),
+            "serving_db_path": str(serving_db_path),
+            "manifest_path": str(manifest_path),
+            "checks_path": str(checks_path),
+            "current_release_link": str(settings.current_release_link),
+            "published_instrument_rows": len(instrument_rows),
+            "published_universe_definition_rows": len(universe_rows),
+            "published_universe_membership_history_rows": len(membership_rows),
+        }
+    )
+
+
+if __name__ == "__main__":
+    run()
