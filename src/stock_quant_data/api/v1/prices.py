@@ -21,7 +21,6 @@ def _resolve_current_symbol_to_instrument(conn, symbol: str) -> tuple | None:
 
     Current rule for price endpoints:
     - use the currently active symbol mapping (effective_to IS NULL)
-    - this keeps the initial price API simple
     """
     return conn.execute(
         """

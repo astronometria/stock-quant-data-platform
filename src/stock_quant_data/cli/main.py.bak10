@@ -12,9 +12,6 @@ from textwrap import dedent
 from stock_quant_data.jobs.build_price_history_from_raw import (
     run as run_build_price_history_from_raw,
 )
-from stock_quant_data.jobs.build_symbol_reference_from_nasdaq_latest import (
-    run as run_build_symbol_reference_from_nasdaq_latest,
-)
 from stock_quant_data.jobs.build_price_normalized_from_raw import (
     run as run_build_price_normalized_from_raw,
 )
@@ -22,12 +19,6 @@ from stock_quant_data.jobs.init_db import run as run_init_db
 from stock_quant_data.jobs.init_price_raw_tables import run as run_init_price_raw_tables
 from stock_quant_data.jobs.insert_invalid_universe_overlap_demo import (
     run as run_insert_invalid_universe_overlap_demo,
-)
-from stock_quant_data.jobs.load_price_source_daily_raw_stooq_from_disk import (
-    run as run_load_price_source_daily_raw_stooq_from_disk,
-)
-from stock_quant_data.jobs.load_nasdaq_symbol_directory_raw_from_downloader import (
-    run as run_load_nasdaq_symbol_directory_raw_from_downloader,
 )
 from stock_quant_data.jobs.publish_release import run as run_publish_release
 from stock_quant_data.jobs.remove_invalid_universe_overlap_demo import (
@@ -64,8 +55,6 @@ def main() -> None:
                 Available commands:
                   sq init-db
                   sq init-price-raw-tables
-                  sq load-price-source-daily-raw-stooq-from-disk
-                  sq load-nasdaq-symbol-directory-raw-from-downloader
                   sq seed-instruments
                   sq seed-symbol-reference-history
                   sq seed-listing-status-history
@@ -74,7 +63,6 @@ def main() -> None:
                   sq seed-price-raw-yahoo-cutover-demo
                   sq build-price-normalized-from-raw
                   sq build-price-history-from-raw
-                  sq build-symbol-reference-from-nasdaq-latest
                   sq seed-universes
                   sq seed-universe-membership-history
                   sq validate-release
@@ -94,14 +82,6 @@ def main() -> None:
 
     if cmd == "init-price-raw-tables":
         run_init_price_raw_tables()
-        raise SystemExit(0)
-
-    if cmd == "load-price-source-daily-raw-stooq-from-disk":
-        run_load_price_source_daily_raw_stooq_from_disk()
-        raise SystemExit(0)
-
-    if cmd == "load-nasdaq-symbol-directory-raw-from-downloader":
-        run_load_nasdaq_symbol_directory_raw_from_downloader()
         raise SystemExit(0)
 
     if cmd == "seed-instruments":
@@ -134,10 +114,6 @@ def main() -> None:
 
     if cmd == "build-price-history-from-raw":
         run_build_price_history_from_raw()
-        raise SystemExit(0)
-
-    if cmd == "build-symbol-reference-from-nasdaq-latest":
-        run_build_symbol_reference_from_nasdaq_latest()
         raise SystemExit(0)
 
     if cmd == "seed-universes":
