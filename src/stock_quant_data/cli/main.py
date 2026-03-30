@@ -10,19 +10,28 @@ import sys
 from textwrap import dedent
 
 from stock_quant_data.jobs.init_db import run as run_init_db
+from stock_quant_data.jobs.insert_invalid_universe_overlap_demo import (
+    run as run_insert_invalid_universe_overlap_demo,
+)
 from stock_quant_data.jobs.publish_release import run as run_publish_release
+from stock_quant_data.jobs.remove_invalid_universe_overlap_demo import (
+    run as run_remove_invalid_universe_overlap_demo,
+)
 from stock_quant_data.jobs.seed_instruments import run as run_seed_instruments
-from stock_quant_data.jobs.seed_universes import run as run_seed_universes
+from stock_quant_data.jobs.seed_listing_status_history import (
+    run as run_seed_listing_status_history,
+)
+from stock_quant_data.jobs.seed_symbol_reference_history import (
+    run as run_seed_symbol_reference_history,
+)
 from stock_quant_data.jobs.seed_universe_membership_history import (
     run as run_seed_universe_membership_history,
 )
+from stock_quant_data.jobs.seed_universes import run as run_seed_universes
 from stock_quant_data.jobs.validate_release import run as run_validate_release
 
 
 def main() -> None:
-    """
-    Dispatch the requested CLI command.
-    """
     argv = sys.argv[1:]
 
     if not argv:
@@ -34,10 +43,14 @@ def main() -> None:
                 Available commands:
                   sq init-db
                   sq seed-instruments
+                  sq seed-symbol-reference-history
+                  sq seed-listing-status-history
                   sq seed-universes
                   sq seed-universe-membership-history
                   sq validate-release
                   sq publish-release
+                  sq insert-invalid-universe-overlap-demo
+                  sq remove-invalid-universe-overlap-demo
                 """
             ).strip()
         )
@@ -51,6 +64,14 @@ def main() -> None:
 
     if cmd == "seed-instruments":
         run_seed_instruments()
+        raise SystemExit(0)
+
+    if cmd == "seed-symbol-reference-history":
+        run_seed_symbol_reference_history()
+        raise SystemExit(0)
+
+    if cmd == "seed-listing-status-history":
+        run_seed_listing_status_history()
         raise SystemExit(0)
 
     if cmd == "seed-universes":
@@ -67,6 +88,14 @@ def main() -> None:
 
     if cmd == "publish-release":
         run_publish_release()
+        raise SystemExit(0)
+
+    if cmd == "insert-invalid-universe-overlap-demo":
+        run_insert_invalid_universe_overlap_demo()
+        raise SystemExit(0)
+
+    if cmd == "remove-invalid-universe-overlap-demo":
+        run_remove_invalid_universe_overlap_demo()
         raise SystemExit(0)
 
     print(f"Unknown command: {cmd}")

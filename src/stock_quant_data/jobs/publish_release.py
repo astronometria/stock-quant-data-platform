@@ -3,12 +3,12 @@ Publish an immutable serving release.
 
 Published objects in this version:
 - serving_release_metadata
+- serving_release_checks
 - instrument
 - universe_definition
 - universe_membership_history
-
-Scientific rule:
-the API serves only what has been explicitly published.
+- symbol_reference_history
+- listing_status_history
 
 Critical rule:
 publication is blocked if validation checks fail.
@@ -51,9 +51,6 @@ def detect_git_commit(repo_root: Path) -> str | None:
 
 
 def read_table_rows(sql_text: str) -> list[tuple]:
-    """
-    Read rows from the build database using the supplied SQL text.
-    """
     conn = connect_build_db()
     try:
         return conn.execute(sql_text).fetchall()
@@ -67,11 +64,10 @@ def build_manifest(
     instrument_count: int,
     universe_count: int,
     membership_count: int,
+    symbol_reference_count: int,
+    listing_status_count: int,
     checks_passed: bool,
 ) -> dict:
-    """
-    Build a release manifest documenting what was published.
-    """
     now_utc = datetime.now(timezone.utc).isoformat()
 
     return {
@@ -86,6 +82,8 @@ def build_manifest(
             "instrument": instrument_count,
             "universe_definition": universe_count,
             "universe_membership_history": membership_count,
+            "symbol_reference_history": symbol_reference_count,
+            "listing_status_history": listing_status_count,
         },
     }
 
@@ -97,10 +95,9 @@ def create_serving_db(
     instrument_rows: list[tuple],
     universe_rows: list[tuple],
     membership_rows: list[tuple],
+    symbol_reference_rows: list[tuple],
+    listing_status_rows: list[tuple],
 ) -> Path:
-    """
-    Create the serving DB and load the explicitly published tables.
-    """
     serving_db_path = release_dir / "serving.duckdb"
     conn = duckdb.connect(str(serving_db_path))
 
@@ -241,6 +238,78 @@ def create_serving_db(
                 """,
                 membership_rows,
             )
+
+        conn.execute(
+            """
+            CREATE TABLE symbol_reference_history (
+                symbol_reference_history_id BIGINT,
+                instrument_id BIGINT,
+                symbol VARCHAR,
+                exchange VARCHAR,
+                is_primary BOOLEAN,
+                effective_from DATE,
+                effective_to DATE,
+                observed_at TIMESTAMP,
+                ingested_at TIMESTAMP
+            )
+            """
+        )
+
+        if symbol_reference_rows:
+            conn.executemany(
+                """
+                INSERT INTO symbol_reference_history (
+                    symbol_reference_history_id,
+                    instrument_id,
+                    symbol,
+                    exchange,
+                    is_primary,
+                    effective_from,
+                    effective_to,
+                    observed_at,
+                    ingested_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                symbol_reference_rows,
+            )
+
+        conn.execute(
+            """
+            CREATE TABLE listing_status_history (
+                listing_status_history_id BIGINT,
+                instrument_id BIGINT,
+                symbol VARCHAR,
+                listing_status VARCHAR,
+                event_type VARCHAR,
+                effective_from DATE,
+                effective_to DATE,
+                source_name VARCHAR,
+                observed_at TIMESTAMP,
+                ingested_at TIMESTAMP
+            )
+            """
+        )
+
+        if listing_status_rows:
+            conn.executemany(
+                """
+                INSERT INTO listing_status_history (
+                    listing_status_history_id,
+                    instrument_id,
+                    symbol,
+                    listing_status,
+                    event_type,
+                    effective_from,
+                    effective_to,
+                    source_name,
+                    observed_at,
+                    ingested_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                listing_status_rows,
+            )
     finally:
         conn.close()
 
@@ -248,11 +317,6 @@ def create_serving_db(
 
 
 def run() -> None:
-    """
-    Publish a new immutable release and repoint data/current.
-
-    This job refuses to publish if validation fails.
-    """
     configure_logging()
     settings = get_settings()
     repo_root = Path(__file__).resolve().parents[3]
@@ -314,6 +378,41 @@ def run() -> None:
         """
     )
 
+    symbol_reference_rows = read_table_rows(
+        """
+        SELECT
+            symbol_reference_history_id,
+            instrument_id,
+            symbol,
+            exchange,
+            is_primary,
+            effective_from,
+            effective_to,
+            observed_at,
+            ingested_at
+        FROM symbol_reference_history
+        ORDER BY symbol, effective_from, symbol_reference_history_id
+        """
+    )
+
+    listing_status_rows = read_table_rows(
+        """
+        SELECT
+            listing_status_history_id,
+            instrument_id,
+            symbol,
+            listing_status,
+            event_type,
+            effective_from,
+            effective_to,
+            source_name,
+            observed_at,
+            ingested_at
+        FROM listing_status_history
+        ORDER BY instrument_id, effective_from, listing_status_history_id
+        """
+    )
+
     release_dir = create_release_dir()
     release_id = release_dir.name
 
@@ -323,6 +422,8 @@ def run() -> None:
         instrument_count=len(instrument_rows),
         universe_count=len(universe_rows),
         membership_count=len(membership_rows),
+        symbol_reference_count=len(symbol_reference_rows),
+        listing_status_count=len(listing_status_rows),
         checks_passed=checks_payload["checks_passed"],
     )
 
@@ -333,6 +434,8 @@ def run() -> None:
         instrument_rows=instrument_rows,
         universe_rows=universe_rows,
         membership_rows=membership_rows,
+        symbol_reference_rows=symbol_reference_rows,
+        listing_status_rows=listing_status_rows,
     )
 
     manifest_path = release_dir / "manifest.json"
@@ -362,6 +465,8 @@ def run() -> None:
             "published_instrument_rows": len(instrument_rows),
             "published_universe_definition_rows": len(universe_rows),
             "published_universe_membership_history_rows": len(membership_rows),
+            "published_symbol_reference_history_rows": len(symbol_reference_rows),
+            "published_listing_status_history_rows": len(listing_status_rows),
         }
     )
 

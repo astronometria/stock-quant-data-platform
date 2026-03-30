@@ -2,11 +2,9 @@
 Validate build-database scientific invariants before publication.
 
 Current scope:
-- universe_membership_history interval validity
-- universe_membership_history overlap detection
-
-Design rule:
-publication must fail if scientific invariants are violated.
+- universe_membership_history interval validity + overlap detection
+- symbol_reference_history interval validity + overlap detection
+- listing_status_history interval validity + overlap detection by instrument
 """
 
 from __future__ import annotations
@@ -22,16 +20,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 def fetch_scalar(conn, sql_text: str):
-    """
-    Execute a scalar query and return the first column of the first row.
-    """
     return conn.execute(sql_text).fetchone()[0]
 
 
 def fetch_rows(conn, sql_text: str) -> list[tuple]:
-    """
-    Execute a query and return all rows.
-    """
     return conn.execute(sql_text).fetchall()
 
 
@@ -42,10 +34,9 @@ def build_checks_payload() -> dict:
     conn = connect_build_db()
     try:
         # --------------------------------------------------------------
-        # Check 1:
-        # effective_to must not be earlier than effective_from.
+        # Universe membership checks.
         # --------------------------------------------------------------
-        invalid_interval_count = fetch_scalar(
+        universe_invalid_interval_count = fetch_scalar(
             conn,
             """
             SELECT COUNT(*)
@@ -55,7 +46,7 @@ def build_checks_payload() -> dict:
             """,
         )
 
-        invalid_interval_examples = fetch_rows(
+        universe_invalid_interval_examples = fetch_rows(
             conn,
             """
             SELECT
@@ -73,17 +64,7 @@ def build_checks_payload() -> dict:
             """,
         )
 
-        # --------------------------------------------------------------
-        # Check 2:
-        # no overlapping intervals for same (universe_id, instrument_id).
-        #
-        # Overlap rule:
-        #   a.effective_from < COALESCE(b.effective_to, far_future)
-        #   AND b.effective_from < COALESCE(a.effective_to, far_future)
-        #
-        # We also ensure a.id < b.id to avoid duplicate pair reporting.
-        # --------------------------------------------------------------
-        overlap_rows = fetch_rows(
+        universe_overlap_rows = fetch_rows(
             conn,
             """
             SELECT
@@ -107,40 +88,220 @@ def build_checks_payload() -> dict:
             """,
         )
 
-        overlap_count = len(overlap_rows)
+        universe_overlap_count = len(universe_overlap_rows)
+
+        # --------------------------------------------------------------
+        # Symbol reference checks.
+        # --------------------------------------------------------------
+        symbol_invalid_interval_count = fetch_scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM symbol_reference_history
+            WHERE effective_to IS NOT NULL
+              AND effective_to < effective_from
+            """,
+        )
+
+        symbol_invalid_interval_examples = fetch_rows(
+            conn,
+            """
+            SELECT
+                symbol_reference_history_id,
+                instrument_id,
+                symbol,
+                exchange,
+                effective_from,
+                effective_to
+            FROM symbol_reference_history
+            WHERE effective_to IS NOT NULL
+              AND effective_to < effective_from
+            ORDER BY symbol, instrument_id, effective_from
+            LIMIT 20
+            """,
+        )
+
+        symbol_overlap_rows = fetch_rows(
+            conn,
+            """
+            SELECT
+                a.symbol_reference_history_id AS left_id,
+                b.symbol_reference_history_id AS right_id,
+                a.symbol,
+                a.instrument_id AS left_instrument_id,
+                b.instrument_id AS right_instrument_id,
+                a.effective_from AS left_effective_from,
+                a.effective_to   AS left_effective_to,
+                b.effective_from AS right_effective_from,
+                b.effective_to   AS right_effective_to
+            FROM symbol_reference_history AS a
+            JOIN symbol_reference_history AS b
+              ON a.symbol = b.symbol
+             AND a.symbol_reference_history_id < b.symbol_reference_history_id
+             AND a.effective_from < COALESCE(b.effective_to, DATE '9999-12-31')
+             AND b.effective_from < COALESCE(a.effective_to, DATE '9999-12-31')
+            ORDER BY a.symbol, a.effective_from, b.effective_from
+            LIMIT 100
+            """,
+        )
+
+        symbol_overlap_count = len(symbol_overlap_rows)
+
+        # --------------------------------------------------------------
+        # Listing status checks.
+        # --------------------------------------------------------------
+        listing_invalid_interval_count = fetch_scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM listing_status_history
+            WHERE effective_to IS NOT NULL
+              AND effective_to < effective_from
+            """,
+        )
+
+        listing_invalid_interval_examples = fetch_rows(
+            conn,
+            """
+            SELECT
+                listing_status_history_id,
+                instrument_id,
+                symbol,
+                listing_status,
+                event_type,
+                effective_from,
+                effective_to
+            FROM listing_status_history
+            WHERE effective_to IS NOT NULL
+              AND effective_to < effective_from
+            ORDER BY instrument_id, effective_from
+            LIMIT 20
+            """,
+        )
+
+        listing_overlap_rows = fetch_rows(
+            conn,
+            """
+            SELECT
+                a.listing_status_history_id AS left_id,
+                b.listing_status_history_id AS right_id,
+                a.instrument_id,
+                a.symbol AS left_symbol,
+                b.symbol AS right_symbol,
+                a.effective_from AS left_effective_from,
+                a.effective_to   AS left_effective_to,
+                b.effective_from AS right_effective_from,
+                b.effective_to   AS right_effective_to
+            FROM listing_status_history AS a
+            JOIN listing_status_history AS b
+              ON a.instrument_id = b.instrument_id
+             AND a.listing_status_history_id < b.listing_status_history_id
+             AND a.effective_from < COALESCE(b.effective_to, DATE '9999-12-31')
+             AND b.effective_from < COALESCE(a.effective_to, DATE '9999-12-31')
+            ORDER BY a.instrument_id, a.effective_from, b.effective_from
+            LIMIT 100
+            """,
+        )
+
+        listing_overlap_count = len(listing_overlap_rows)
 
         checks = {
-            "invalid_interval_count": invalid_interval_count,
-            "invalid_interval_examples": [
-                {
-                    "universe_membership_history_id": row[0],
-                    "universe_id": row[1],
-                    "instrument_id": row[2],
-                    "membership_status": row[3],
-                    "effective_from": str(row[4]) if row[4] is not None else None,
-                    "effective_to": str(row[5]) if row[5] is not None else None,
-                }
-                for row in invalid_interval_examples
-            ],
-            "overlap_count": overlap_count,
-            "overlap_examples": [
-                {
-                    "left_id": row[0],
-                    "right_id": row[1],
-                    "universe_id": row[2],
-                    "instrument_id": row[3],
-                    "left_effective_from": str(row[4]) if row[4] is not None else None,
-                    "left_effective_to": str(row[5]) if row[5] is not None else None,
-                    "right_effective_from": str(row[6]) if row[6] is not None else None,
-                    "right_effective_to": str(row[7]) if row[7] is not None else None,
-                }
-                for row in overlap_rows
-            ],
+            "universe_membership_history": {
+                "invalid_interval_count": universe_invalid_interval_count,
+                "invalid_interval_examples": [
+                    {
+                        "universe_membership_history_id": row[0],
+                        "universe_id": row[1],
+                        "instrument_id": row[2],
+                        "membership_status": row[3],
+                        "effective_from": str(row[4]) if row[4] is not None else None,
+                        "effective_to": str(row[5]) if row[5] is not None else None,
+                    }
+                    for row in universe_invalid_interval_examples
+                ],
+                "overlap_count": universe_overlap_count,
+                "overlap_examples": [
+                    {
+                        "left_id": row[0],
+                        "right_id": row[1],
+                        "universe_id": row[2],
+                        "instrument_id": row[3],
+                        "left_effective_from": str(row[4]) if row[4] is not None else None,
+                        "left_effective_to": str(row[5]) if row[5] is not None else None,
+                        "right_effective_from": str(row[6]) if row[6] is not None else None,
+                        "right_effective_to": str(row[7]) if row[7] is not None else None,
+                    }
+                    for row in universe_overlap_rows
+                ],
+            },
+            "symbol_reference_history": {
+                "invalid_interval_count": symbol_invalid_interval_count,
+                "invalid_interval_examples": [
+                    {
+                        "symbol_reference_history_id": row[0],
+                        "instrument_id": row[1],
+                        "symbol": row[2],
+                        "exchange": row[3],
+                        "effective_from": str(row[4]) if row[4] is not None else None,
+                        "effective_to": str(row[5]) if row[5] is not None else None,
+                    }
+                    for row in symbol_invalid_interval_examples
+                ],
+                "overlap_count": symbol_overlap_count,
+                "overlap_examples": [
+                    {
+                        "left_id": row[0],
+                        "right_id": row[1],
+                        "symbol": row[2],
+                        "left_instrument_id": row[3],
+                        "right_instrument_id": row[4],
+                        "left_effective_from": str(row[5]) if row[5] is not None else None,
+                        "left_effective_to": str(row[6]) if row[6] is not None else None,
+                        "right_effective_from": str(row[7]) if row[7] is not None else None,
+                        "right_effective_to": str(row[8]) if row[8] is not None else None,
+                    }
+                    for row in symbol_overlap_rows
+                ],
+            },
+            "listing_status_history": {
+                "invalid_interval_count": listing_invalid_interval_count,
+                "invalid_interval_examples": [
+                    {
+                        "listing_status_history_id": row[0],
+                        "instrument_id": row[1],
+                        "symbol": row[2],
+                        "listing_status": row[3],
+                        "event_type": row[4],
+                        "effective_from": str(row[5]) if row[5] is not None else None,
+                        "effective_to": str(row[6]) if row[6] is not None else None,
+                    }
+                    for row in listing_invalid_interval_examples
+                ],
+                "overlap_count": listing_overlap_count,
+                "overlap_examples": [
+                    {
+                        "left_id": row[0],
+                        "right_id": row[1],
+                        "instrument_id": row[2],
+                        "left_symbol": row[3],
+                        "right_symbol": row[4],
+                        "left_effective_from": str(row[5]) if row[5] is not None else None,
+                        "left_effective_to": str(row[6]) if row[6] is not None else None,
+                        "right_effective_from": str(row[7]) if row[7] is not None else None,
+                        "right_effective_to": str(row[8]) if row[8] is not None else None,
+                    }
+                    for row in listing_overlap_rows
+                ],
+            },
         }
 
         checks_passed = (
-            checks["invalid_interval_count"] == 0
-            and checks["overlap_count"] == 0
+            checks["universe_membership_history"]["invalid_interval_count"] == 0
+            and checks["universe_membership_history"]["overlap_count"] == 0
+            and checks["symbol_reference_history"]["invalid_interval_count"] == 0
+            and checks["symbol_reference_history"]["overlap_count"] == 0
+            and checks["listing_status_history"]["invalid_interval_count"] == 0
+            and checks["listing_status_history"]["overlap_count"] == 0
         )
 
         return {
@@ -152,9 +313,6 @@ def build_checks_payload() -> dict:
 
 
 def write_checks_file(path: Path, payload: dict) -> None:
-    """
-    Write validation payload to a JSON file.
-    """
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True),
         encoding="utf-8",
@@ -162,12 +320,6 @@ def write_checks_file(path: Path, payload: dict) -> None:
 
 
 def run() -> None:
-    """
-    Run validation and print the result.
-
-    Exit code stays 0 here because the CLI wrapper is intentionally thin.
-    The publish job itself will enforce blocking behavior.
-    """
     configure_logging()
     LOGGER.info("validate-release started")
 
