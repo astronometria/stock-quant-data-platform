@@ -73,3 +73,16 @@ dist/
 .vscode/
 .idea/
 .DS_Store
+
+# Local data artifacts
+data/build/
+data/releases/
+data/staging/
+
+# DuckDB local files
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp
+
+# Logs
+logs/
