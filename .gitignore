@@ -76,7 +76,6 @@ dist/
 
 # Local data artifacts
 data/build/
-data/releases/
 data/staging/
 
 # DuckDB local files
